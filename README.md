@@ -113,8 +113,8 @@ jobs:
         with:
           bundle: ${{ secrets.OPENCODE_AUTH_BUNDLE }}
           
-      # Run agent
-      - run: opencode run "@issue-manager Analyze this PR"
+      # Run agent via command
+      - run: opencode run --command "manage-issues" "Analyze this PR"
 ```
 </details>
 

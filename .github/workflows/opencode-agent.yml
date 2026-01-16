@@ -30,4 +30,4 @@ jobs:
       # Now opencode is ready to use!
       # We use the command defined in .opencode/command/issue-manager.md
       - name: Run OpenCode Issue Manager
-        run: opencode run --command "/manage-issues"
+        run: opencode run --command "manage-issues"

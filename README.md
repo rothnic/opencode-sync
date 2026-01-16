@@ -109,7 +109,7 @@ jobs:
       - uses: oven-sh/setup-bun@v1
       
       # Restore auth & install opencode
-      - uses: myuser/opencode-sync@v1
+      - uses: rothnic/opencode-sync@v1
         with:
           bundle: ${{ secrets.OPENCODE_AUTH_BUNDLE }}
           

@@ -1,5 +1,5 @@
 ---
-name: issue-manager
+name: github
 description: Triage and fix GitHub issues
 mode: subagent
 model: google/antigravity-gemini-3-flash

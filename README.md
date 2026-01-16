@@ -92,7 +92,24 @@ Push your local auth to the repo's secret:
 bunx opencode-sync sync
 ```
 
-### 4. Use in CI
+### 4. Install Commands & Workflows
+
+Install the built-in agent commands and GitHub workflows:
+
+```bash
+# Install everything
+bunx opencode-sync install --all
+
+# Or install selectively
+bunx opencode-sync install --commands   # .opencode/command/*.md
+bunx opencode-sync install --workflows  # .github/workflows/*.yml
+```
+
+This installs:
+- **Commands**: `project-review`, `issue-triage`, `issue-discover`, `issue-organize`, `mention-handler`
+- **Workflows**: `opencode-agent.yml`, `opencode-mention.yml`, `copilot-setup-steps.yml`
+
+### 5. Use in CI
 
 In your GitHub Workflow:
 
@@ -120,11 +137,13 @@ jobs:
 
 ## Example Workflows
 
+All workflows use OpenCode commands defined in `.opencode/command/`. Install them with `bunx opencode-sync install --all`.
+
 ### OpenCode Agent Dispatcher (Recommended)
 
-A unified workflow with multiple commands for project maintenance. All commands are **idempotent** - they check for existing work before creating duplicates.
+A unified workflow that dispatches to OpenCode commands. Commands are **idempotent** - they check for existing work before creating duplicates.
 
-See [`examples/opencode-agent.yml`](examples/opencode-agent.yml) - copy to `.github/workflows/opencode-agent.yml`
+See [`examples/opencode-agent.yml`](examples/opencode-agent.yml) - or install with `--workflows`
 
 | Command | Description | Schedule |
 |---------|-------------|----------|
@@ -132,11 +151,11 @@ See [`examples/opencode-agent.yml`](examples/opencode-agent.yml) - copy to `.git
 | `issue-triage` | Review issues for clarity, add context, mark readiness | Weekly (Monday) |
 | `issue-discover` | Scan codebase for TODOs, bugs, tech debt | On-demand |
 | `issue-organize` | Group issues into phases, identify dependencies | On-demand |
-| `custom` | Run any custom prompt with full context | On-demand |
+| `manage-issues` | Triage and fix GitHub issues | On-demand |
 
 **Trigger manually:**
 ```bash
-gh workflow run "OpenCode Agent" -f command=issue-triage -f dry_run=true
+gh workflow run "OpenCode Agent" -f command=issue-triage
 ```
 
 ### @opencode Mention Handler

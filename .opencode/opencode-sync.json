@@ -24,6 +24,17 @@
     "default": {
       "repo": "rothnic/opencode-sync",
       "sync": {}
+    },
+    "gastown": {
+      "repo": "rothnic/gastown",
+      "sync": {
+        "config": {
+          "plugins": [
+            "opencode-antigravity-auth@1.2.8",
+            "@opencode-ai/github"
+          ]
+        }
+      }
     }
   }
 }

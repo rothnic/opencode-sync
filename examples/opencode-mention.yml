@@ -1,16 +1,7 @@
 # @opencode Mention Handler
-# Triggers when someone mentions @opencode in an issue or PR comment.
-# The agent posts progress updates and references the original thread in any PRs.
-#
-# Setup:
-# 1. Run `bunx opencode-sync sync` to push your auth to GitHub secrets
-# 2. Copy this file to .github/workflows/opencode-mention.yml
-# 3. Optionally create a GitHub bot account named "opencode" for cleaner UX
-#
-# Bot Account (optional):
-# Create a dedicated GitHub account (e.g., "my-opencode-bot") for cleaner UX.
-# Benefits: distinct identity, dedicated avatar, won't consume your API limits.
-# Add it as a collaborator and use its PAT instead of GITHUB_TOKEN.
+# Triggers when @opencode is mentioned in issue/PR comments.
+# Uses the mention-handler command from .opencode/command/.
+# Install with: bunx opencode-sync install --workflows --commands
 
 name: OpenCode Mention Handler
 
@@ -19,12 +10,6 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
-
-env:
-  ISSUE_NUMBER: ${{ github.event.issue.number }}
-  REPO: ${{ github.repository }}
-  TRIGGER_COMMENT_URL: ${{ github.event.comment.html_url }}
-  TRIGGER_USER: ${{ github.event.comment.user.login }}
 
 jobs:
   handle-mention:
@@ -46,25 +31,6 @@ jobs:
               content: 'eyes'
             });
 
-      - name: Post initial status
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          gh issue comment "$ISSUE_NUMBER" -R "$REPO" --body "$(cat <<'EOF'
-          **OpenCode Agent starting...**
-
-          I've received your request and am beginning to analyze it.
-
-          | | |
-          |---|---|
-          | Triggered by | @${{ env.TRIGGER_USER }} |
-          | Workflow | [View logs](${{ env.WORKFLOW_URL }}) |
-
-          I'll post updates as I make progress.
-          EOF
-          )"
-
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.issue.pull_request.head.ref || github.ref }}
@@ -82,27 +48,7 @@ jobs:
           git config --global user.name "OpenCode Agent"
           git config --global user.email "agent@opencode.ai"
 
-      - name: Gather context and save metadata
-        id: context
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p /tmp/context
-          
-          echo '${{ toJson(github.event.issue.body) }}' > /tmp/context/issue-body.txt
-          
-          gh api repos/$REPO/issues/$ISSUE_NUMBER/comments \
-            --jq '.[] | "[\(.user.login)]: \(.body)"' > /tmp/context/comments.txt
-          
-          if [ "${{ github.event.issue.pull_request != null }}" = "true" ]; then
-            gh pr diff $ISSUE_NUMBER > /tmp/context/pr.diff
-            gh pr view $ISSUE_NUMBER --json files -q '.files[].path' > /tmp/context/changed-files.txt
-            echo "is_pr=true" >> $GITHUB_OUTPUT
-          else
-            echo "is_pr=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Extract prompt
+      - name: Extract prompt from mention
         id: prompt
         run: |
           COMMENT='${{ github.event.comment.body }}'
@@ -111,101 +57,16 @@ jobs:
           echo "$PROMPT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Save context for agent
+      - name: Run mention handler
         env:
-          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          TRIGGER_COMMENT_URL: ${{ github.event.comment.html_url }}
+          TRIGGER_USER: ${{ github.event.comment.user.login }}
+          IS_PR: ${{ github.event.issue.pull_request != null }}
         run: |
-          cat > /tmp/context/instructions.md << 'INSTRUCTIONS'
-          # GitHub Mention Context
-
-          You were mentioned in a GitHub comment. **Post progress updates frequently.**
-
-          ## Context Variables (use these in gh commands)
-          - ISSUE_NUMBER: $ISSUE_NUMBER
-          - REPO: $REPO  
-          - TRIGGER_COMMENT_URL: $TRIGGER_COMMENT_URL
-          - TRIGGER_USER: $TRIGGER_USER
-
-          ## Progress Update Templates
-
-          ### After analyzing - post your plan:
-          ```bash
-          gh issue comment $ISSUE_NUMBER -R $REPO --body "## Plan
-          
-          **Understanding:** [what you think is being asked]
-          
-          **Steps:**
-          1. [step 1]
-          2. [step 2]"
-          ```
-
-          ### When starting work:
-          ```bash
-          gh issue comment $ISSUE_NUMBER -R $REPO --body "## Starting Work
-          
-          Working on: [current task]"
-          ```
-
-          ### When creating a PR - reference the original issue:
-          ```bash
-          gh pr create --title "fix: [description]" --body "## Summary
-          [changes made]
-          
-          Triggered by: $TRIGGER_COMMENT_URL
-          Resolves: #$ISSUE_NUMBER"
-          ```
-
-          ### After pushing commits:
-          ```bash
-          gh issue comment $ISSUE_NUMBER -R $REPO --body "## Progress
-          
-          Pushed: [commit message]"
-          ```
-
-          ### When complete:
-          ```bash
-          gh issue comment $ISSUE_NUMBER -R $REPO --body "## Complete
-          
-          **Done:**
-          - [action 1]
-          - [action 2]
-          
-          **Result:** [PR link or summary]"
-          ```
-
-          ### If blocked:
-          ```bash
-          gh issue comment $ISSUE_NUMBER -R $REPO --body "## Need Clarification
-          
-          [question]"
-          ```
-
-          **CRITICAL: The user cannot see your internal reasoning. POST UPDATES EARLY AND OFTEN.**
-          INSTRUCTIONS
-
-      - name: Run OpenCode Agent
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
-        run: |
-          opencode run --print "$(cat /tmp/context/instructions.md)
-          
-          ## Current Request
-          - Repository: $REPO
-          - Issue/PR: #$ISSUE_NUMBER - $ISSUE_TITLE
-          - Triggered by: @$TRIGGER_USER
-          - Original comment: $TRIGGER_COMMENT_URL
-          - Is PR: ${{ steps.context.outputs.is_pr }}
-          
-          ## Issue Body
-          $(cat /tmp/context/issue-body.txt)
-          
-          ## Comment Thread
-          $(cat /tmp/context/comments.txt)
-          
-          ## User Request
-          ${{ steps.prompt.outputs.prompt }}
-          "
+          opencode run --command "mention-handler" "${{ steps.prompt.outputs.prompt }}"
 
       - name: Post completion reaction
         if: success()
@@ -218,20 +79,6 @@ jobs:
               comment_id: context.payload.comment.id,
               content: 'rocket'
             });
-
-      - name: Post failure comment
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          gh issue comment "$ISSUE_NUMBER" -R "$REPO" --body "## Agent Failed
-
-          I encountered an error while processing your request.
-          
-          **Workflow:** [View logs]($WORKFLOW_URL)
-          
-          Please check the workflow logs for details."
 
       - name: Post failure reaction
         if: failure()

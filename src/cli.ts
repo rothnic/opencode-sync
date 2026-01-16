@@ -75,7 +75,18 @@ const checkCmd = command(
   })
 );
 
-const app = or(syncCmd, restoreCmd, initCmd, listCmd, checkCmd);
+const installCmd = command(
+  "install",
+  object({
+    kind: constant("install"),
+    workflows: withDefault(flag("-w", "--workflows"), false),
+    commands: withDefault(flag("-c", "--commands"), false),
+    all: withDefault(flag("-a", "--all"), false),
+    verbose: withDefault(flag("-v", "--verbose"), false),
+  })
+);
+
+const app = or(syncCmd, restoreCmd, initCmd, listCmd, checkCmd, installCmd);
 
 async function handleSync(args: {
   target?: string;
@@ -403,6 +414,105 @@ async function handleCheck(args: { verbose: boolean }) {
   }
 }
 
+async function handleInstall(args: {
+  workflows: boolean;
+  commands: boolean;
+  all: boolean;
+  verbose: boolean;
+}) {
+  const installWorkflows = args.all || args.workflows;
+  const installCommands = args.all || args.commands;
+
+  if (!installWorkflows && !installCommands) {
+    console.log("Usage: opencode-sync install [--workflows] [--commands] [--all]");
+    console.log("");
+    console.log("Options:");
+    console.log("  -w, --workflows  Install GitHub workflow files");
+    console.log("  -c, --commands   Install OpenCode command files");
+    console.log("  -a, --all        Install everything");
+    process.exit(0);
+  }
+
+  const packageRoot = new URL(".", import.meta.url).pathname.replace("/src/", "");
+  const targetDir = process.cwd();
+  
+  let installed = 0;
+
+  if (installCommands) {
+    const commandDir = join(targetDir, ".opencode", "command");
+    if (!existsSync(commandDir)) {
+      mkdirSync(commandDir, { recursive: true });
+    }
+
+    const commands = [
+      "project-review.md",
+      "issue-triage.md",
+      "issue-discover.md",
+      "issue-organize.md",
+      "mention-handler.md",
+      "manage-issues.md",
+    ];
+
+    for (const cmd of commands) {
+      const sourcePath = join(packageRoot, ".opencode", "command", cmd);
+      const targetPath = join(commandDir, cmd);
+
+      if (existsSync(sourcePath)) {
+        if (existsSync(targetPath)) {
+          if (args.verbose) console.log(`  ⏭️  Skipping ${cmd} (already exists)`);
+        } else {
+          const content = await Bun.file(sourcePath).text();
+          await Bun.write(targetPath, content);
+          console.log(`  ✅ Installed command: ${cmd}`);
+          installed++;
+        }
+      } else if (args.verbose) {
+        console.log(`  ⚠️  Source not found: ${sourcePath}`);
+      }
+    }
+  }
+
+  if (installWorkflows) {
+    const workflowDir = join(targetDir, ".github", "workflows");
+    if (!existsSync(workflowDir)) {
+      mkdirSync(workflowDir, { recursive: true });
+    }
+
+    const workflows = [
+      { source: "opencode-agent.yml", target: "opencode-agent.yml" },
+      { source: "opencode-mention.yml", target: "opencode-mention.yml" },
+      { source: "copilot-setup-steps.yml", target: "copilot-setup-steps.yml" },
+    ];
+
+    for (const wf of workflows) {
+      const sourcePath = join(packageRoot, "examples", wf.source);
+      const targetPath = join(workflowDir, wf.target);
+
+      if (existsSync(sourcePath)) {
+        if (existsSync(targetPath)) {
+          if (args.verbose) console.log(`  ⏭️  Skipping ${wf.target} (already exists)`);
+        } else {
+          const content = await Bun.file(sourcePath).text();
+          await Bun.write(targetPath, content);
+          console.log(`  ✅ Installed workflow: ${wf.target}`);
+          installed++;
+        }
+      } else if (args.verbose) {
+        console.log(`  ⚠️  Source not found: ${sourcePath}`);
+      }
+    }
+  }
+
+  console.log(`\n📦 Installed ${installed} file(s)`);
+
+  if (installed > 0) {
+    console.log("\nNext steps:");
+    console.log("1. Review the installed files and customize as needed");
+    console.log("2. Run 'opencode-sync sync' to push your auth to GitHub");
+    console.log("3. Trigger workflows via GitHub Actions or @opencode mentions");
+  }
+}
+
 
 const result = await run(app, {
   programName: "opencode-sync",
@@ -426,5 +536,8 @@ switch (result.kind) {
     break;
   case "check":
     await handleCheck(result);
+    break;
+  case "install":
+    await handleInstall(result);
     break;
 }

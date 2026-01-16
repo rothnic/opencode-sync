@@ -1,0 +1,21 @@
+# minimal opencode agent setup
+name: OpenCode Agent
+on: workflow_dispatch
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    environment: copilot  # Required for secret access
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: oven-sh/setup-bun@v1
+
+      # Install opencode and restore auth in one step
+      - uses: ./  # Uses the action in the repo root (if running inside this repo)
+                  # In real usage: uses: user/opencode-sync@v1
+        with:
+          bundle: ${{ secrets.OPENCODE_AUTH_BUNDLE }}
+      
+      # Now opencode is ready to use!
+      - run: opencode run "Check the code for issues"

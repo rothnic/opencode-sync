@@ -1,0 +1,28 @@
+{
+  "defaults": {
+    "environment": "copilot",
+    "secretName": "OPENCODE_AUTH_BUNDLE",
+    "sync": {
+      "auth": {
+        "antigravity-accounts": true,
+        "auth": true
+      },
+      "config": {
+        "mode": "merge",
+        "model": "google/antigravity-gemini-3-flash",
+        "plugins": [
+          "opencode-antigravity-auth@1.2.8"
+        ],
+        "providers": {
+          "google": true
+        }
+      }
+    }
+  },
+  "targets": {
+    "default": {
+      "repo": "rothnic/opencode-sync",
+      "sync": {}
+    }
+  }
+}

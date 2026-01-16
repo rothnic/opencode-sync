@@ -1,13 +1,10 @@
 import { existsSync, mkdirSync, rmSync, readdirSync, statSync, cpSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
-import type { ResolvedTarget, BundleManifest } from "./types.js";
-import { getOpenCodePaths } from "./config.js";
+import type { ResolvedTarget, BundleManifest, JsonValue, JsonObject } from "./types.js";
+import { getOpenCodePaths, getProjectPaths } from "./config.js";
 import { buildMergedConfig } from "./merge.js";
 import { getPreset, type Preset } from "./presets.js";
-
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-type JsonObject = { [key: string]: JsonValue };
 
 interface BundleFile {
   sourcePath: string;
@@ -15,10 +12,27 @@ interface BundleFile {
   relativeTo: "config" | "data" | "root";
 }
 
+function collectMarkdownFiles(
+  sourceDir: string,
+  targetDir: string,
+  relativeTo: "config" | "data" = "config"
+): BundleFile[] {
+  if (!existsSync(sourceDir)) return [];
+  
+  return readdirSync(sourceDir)
+    .filter(f => f.endsWith(".md"))
+    .map(file => ({
+      sourcePath: join(sourceDir, file),
+      targetPath: join(targetDir, file),
+      relativeTo
+    }));
+}
+
 export async function collectBundleFiles(
   target: ResolvedTarget
 ): Promise<BundleFile[]> {
   const paths = getOpenCodePaths();
+  const projectPaths = getProjectPaths();
   const files: BundleFile[] = [];
   const authSpec = target.sync.auth;
   
@@ -59,26 +73,15 @@ export async function collectBundleFiles(
 
   // 2. Agents
   if (target.sync.agents) {
-    const projectAgentDir = join(process.cwd(), ".opencode", "agent");
-    if (existsSync(projectAgentDir)) {
-      const agentFiles = readdirSync(projectAgentDir).filter(f => f.endsWith(".md"));
-      for (const file of agentFiles) {
-        files.push({
-          sourcePath: join(projectAgentDir, file),
-          targetPath: join("agent", file),
-          relativeTo: "config"
-        });
-      }
-    }
+    files.push(...collectMarkdownFiles(projectPaths.agentDir, "agent"));
   }
 
-  // 3. Skills
+  // 3. Skills (nested directory structure)
   if (target.sync.skills) {
-    const projectSkillDir = join(process.cwd(), ".opencode", "skill");
-    if (existsSync(projectSkillDir)) {
-      const skills = readdirSync(projectSkillDir);
+    if (existsSync(projectPaths.skillDir)) {
+      const skills = readdirSync(projectPaths.skillDir);
       for (const skill of skills) {
-        const skillPath = join(projectSkillDir, skill);
+        const skillPath = join(projectPaths.skillDir, skill);
         if (statSync(skillPath).isDirectory()) {
           const skillFile = join(skillPath, "SKILL.md");
           if (existsSync(skillFile)) {
@@ -95,17 +98,7 @@ export async function collectBundleFiles(
 
   // 4. Commands
   if (target.sync.commands) {
-    const projectCmdDir = join(process.cwd(), ".opencode", "command");
-    if (existsSync(projectCmdDir)) {
-      const cmdFiles = readdirSync(projectCmdDir).filter(f => f.endsWith(".md"));
-      for (const file of cmdFiles) {
-        files.push({
-          sourcePath: join(projectCmdDir, file),
-          targetPath: join("command", file),
-          relativeTo: "config"
-        });
-      }
-    }
+    files.push(...collectMarkdownFiles(projectPaths.commandDir, "command"));
   }
 
   // 5. Full Directories

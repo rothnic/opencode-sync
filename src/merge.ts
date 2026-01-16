@@ -3,10 +3,7 @@
  * @description Selective merging of OpenCode configuration pieces
  */
 
-import type { ConfigSync } from "./types.js";
-
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-type JsonObject = { [key: string]: JsonValue };
+import type { ConfigSync, JsonValue, JsonObject } from "./types.js";
 
 /**
  * Deep merge two objects, with source overwriting target

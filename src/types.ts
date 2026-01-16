@@ -3,6 +3,9 @@
  * @description Type definitions for opencode-sync configuration and operations
  */
 
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export type JsonObject = { [key: string]: JsonValue };
+
 export type {
   AuthSync,
   ConfigSync,

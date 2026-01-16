@@ -153,3 +153,18 @@ export function getOpenCodePaths() {
     opencodeConfig: join(home, ".config", "opencode", "opencode.jsonc"),
   };
 }
+
+/**
+ * Project-level .opencode paths (relative to cwd)
+ */
+export function getProjectPaths(cwd: string = process.cwd()) {
+  const opencodeDir = join(cwd, ".opencode");
+  return {
+    root: opencodeDir,
+    config: join(opencodeDir, CONFIG_FILENAME),
+    configJsonc: join(opencodeDir, CONFIG_FILENAME.replace(".json", ".jsonc")),
+    agentDir: join(opencodeDir, "agent"),
+    skillDir: join(opencodeDir, "skill"),
+    commandDir: join(opencodeDir, "command"),
+  };
+}

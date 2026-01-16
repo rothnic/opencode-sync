@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenCode Sync Configuration",
+  "description": "Configuration for syncing OpenCode auth and config to GitHub secrets",
+  "type": "object",
+  "properties": {
+    "defaults": {
+      "type": "object",
+      "description": "Default values applied to all targets",
+      "properties": {
+        "environment": {
+          "type": "string",
+          "default": "copilot",
+          "description": "GitHub environment name"
+        },
+        "secretName": {
+          "type": "string",
+          "default": "OPENCODE_AUTH_BUNDLE",
+          "description": "Name of the secret to create"
+        },
+        "sync": {
+          "$ref": "#/definitions/SyncSpec"
+        }
+      }
+    },
+    "targets": {
+      "type": "object",
+      "description": "Named sync targets",
+      "additionalProperties": {
+        "$ref": "#/definitions/Target"
+      }
+    }
+  },
+  "required": ["targets"],
+  "definitions": {
+    "Target": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string",
+          "pattern": "^[^/]+/[^/]+$",
+          "description": "GitHub repo in owner/repo format"
+        },
+        "environment": {
+          "type": "string",
+          "description": "GitHub environment name (overrides default)"
+        },
+        "secretName": {
+          "type": "string",
+          "description": "Secret name (overrides default)"
+        },
+        "sync": {
+          "$ref": "#/definitions/SyncSpec"
+        }
+      },
+      "required": ["repo", "sync"]
+    },
+    "SyncSpec": {
+      "type": "object",
+      "properties": {
+        "auth": {
+          "$ref": "#/definitions/AuthSync"
+        },
+        "config": {
+          "$ref": "#/definitions/ConfigSync"
+        }
+      }
+    },
+    "AuthSync": {
+      "type": "object",
+      "properties": {
+        "antigravity-accounts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include antigravity OAuth tokens"
+        },
+        "auth": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include auth.json session state"
+        },
+        "credentials": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include legacy credentials.json"
+        }
+      }
+    },
+    "ConfigSync": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["full", "merge", "none"],
+          "default": "none",
+          "description": "How to handle opencode.jsonc"
+        },
+        "plugins": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Plugins to add (merge mode only)"
+        },
+        "providers": {
+          "type": "object",
+          "description": "Provider blocks to sync (merge mode only)",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "boolean" },
+              { "type": "object" }
+            ]
+          }
+        },
+        "model": {
+          "type": "string",
+          "description": "Model to set (merge mode only)"
+        },
+        "extra": {
+          "type": "object",
+          "description": "Additional config keys to merge"
+        }
+      }
+    }
+  }
+}

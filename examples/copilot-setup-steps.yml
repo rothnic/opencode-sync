@@ -1,0 +1,42 @@
+# Example: Copilot Agent Setup
+# Save this as .github/workflows/copilot-setup-steps.yml in your repository
+
+name: Copilot Setup Steps
+
+on: workflow_dispatch
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    environment: copilot
+    
+    steps:
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install OpenCode
+        run: |
+          npm install -g opencode-ai
+          npm install -g opencode-antigravity-auth@1.2.8
+
+      - name: Restore OpenCode Auth
+        run: |
+          mkdir -p ~/.config/opencode ~/.local/share/opencode /tmp/opencode-restore
+          
+          echo "${{ secrets.OPENCODE_AUTH_BUNDLE }}" | base64 -d | tar -xzf - -C /tmp/opencode-restore
+          
+          if [ -d /tmp/opencode-restore/config/opencode ]; then
+            cp -r /tmp/opencode-restore/config/opencode/* ~/.config/opencode/
+          fi
+          
+          if [ -d /tmp/opencode-restore/data/opencode ]; then
+            cp -r /tmp/opencode-restore/data/opencode/* ~/.local/share/opencode/
+          fi
+          
+          rm -rf /tmp/opencode-restore
+
+      - name: Set headless mode
+        run: echo "OPENCODE_HEADLESS=1" >> $GITHUB_ENV
+
+      - name: Verify auth
+        run: opencode auth status

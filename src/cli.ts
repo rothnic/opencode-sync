@@ -1,0 +1,368 @@
+import {
+  command,
+  option,
+  flag,
+  argument,
+  constant,
+  object,
+  or,
+  withDefault,
+  optional,
+} from "@optique/core/parser";
+import { string } from "@optique/core/valueparser";
+import { message } from "@optique/core/message";
+import { run } from "@optique/run";
+import { z } from "zod";
+import { join } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import {
+  findConfigFile,
+  loadConfig,
+  resolveTarget,
+  resolveAllTargets,
+  getOpenCodePaths,
+} from "./config.js";
+import { createBundle, restoreBundle } from "./bundle.js";
+import { syncToGitHub, checkGhCli } from "./github.js";
+import { SyncConfigSchema } from "./schema.js";
+
+const VERSION = "0.1.0";
+
+const syncCmd = command(
+  "sync",
+  object({
+    kind: constant("sync"),
+    target: optional(argument(string())),
+    config: optional(option("-c", "--config", string())),
+    dryRun: withDefault(flag("-d", "--dry-run"), false),
+    verbose: withDefault(flag("-v", "--verbose"), false),
+  })
+);
+
+const restoreCmd = command(
+  "restore",
+  object({
+    kind: constant("restore"),
+    envVar: withDefault(
+      option("-e", "--env-var", string()),
+      "OPENCODE_AUTH_BUNDLE"
+    ),
+    verbose: withDefault(flag("-v", "--verbose"), false),
+  })
+);
+
+const initCmd = command(
+  "init",
+  object({
+    kind: constant("init"),
+    verbose: withDefault(flag("-v", "--verbose"), false),
+  })
+);
+
+const listCmd = command(
+  "list",
+  object({
+    kind: constant("list"),
+    config: optional(option("-c", "--config", string())),
+  })
+);
+
+const checkCmd = command(
+  "check",
+  object({
+    kind: constant("check"),
+    verbose: withDefault(flag("-v", "--verbose"), false),
+  })
+);
+
+const app = or(syncCmd, restoreCmd, initCmd, listCmd, checkCmd);
+
+async function handleSync(args: {
+  target?: string;
+  config?: string;
+  dryRun: boolean;
+  verbose: boolean;
+}) {
+  const configPath = findConfigFile(process.cwd(), args.config);
+
+  if (!configPath) {
+    console.error(
+      "❌ No config file found. Run 'opencode-sync init' to create one."
+    );
+    process.exit(1);
+  }
+
+  if (args.verbose) {
+    console.log(`📋 Using config: ${configPath}`);
+  }
+
+  const config = await loadConfig(configPath);
+  try {
+    SyncConfigSchema.parse(config);
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      console.error("❌ Invalid config format:");
+      console.error(e.format());
+    } else {
+      console.error(e);
+    }
+    process.exit(1);
+  }
+
+  const targets = args.target
+    ? [resolveTarget(args.target, config)].filter(Boolean)
+    : resolveAllTargets(config);
+
+  if (targets.length === 0) {
+    console.error(
+      args.target
+        ? `❌ Target "${args.target}" not found in config`
+        : "❌ No targets configured"
+    );
+    process.exit(1);
+  }
+
+  if (!args.dryRun) {
+    const ghCheck = await checkGhCli();
+    if (!ghCheck.ok) {
+      console.error(`❌ ${ghCheck.error}`);
+      process.exit(1);
+    }
+  }
+
+  let success = 0;
+  let failed = 0;
+
+  for (const target of targets) {
+    if (!target) continue;
+
+    try {
+      const { base64 } = await createBundle(target, args.verbose);
+      const result = await syncToGitHub(target, base64, {
+        dryRun: args.dryRun,
+        verbose: args.verbose,
+      });
+
+      if (result.ok) {
+        success++;
+        if (!args.verbose) {
+          console.log(
+            `✅ ${target.name} -> ${target.repo}/${target.environment}`
+          );
+        }
+      } else {
+        failed++;
+        console.error(`❌ ${target.name}: ${result.error}`);
+      }
+    } catch (err) {
+      failed++;
+      console.error(
+        `❌ ${target.name}: ${err instanceof Error ? err.message : err}`
+      );
+    }
+  }
+
+  console.log(
+    `\n📊 Synced ${success} target(s)${failed > 0 ? `, ${failed} failed` : ""}`
+  );
+  process.exit(failed > 0 ? 1 : 0);
+}
+
+async function handleRestore(args: { envVar: string; verbose: boolean }) {
+  const bundle = process.env[args.envVar];
+
+  if (!bundle) {
+    console.error(`❌ Environment variable ${args.envVar} not set`);
+    process.exit(1);
+  }
+
+  try {
+    await restoreBundle(bundle, args.verbose);
+    console.log("✅ Bundle restored successfully");
+  } catch (err) {
+    console.error(
+      `❌ Failed to restore: ${err instanceof Error ? err.message : err}`
+    );
+    process.exit(1);
+  }
+}
+
+async function handleInit(args: { verbose: boolean }) {
+  const opencodeDir = join(process.cwd(), ".opencode");
+  const configPath = join(opencodeDir, "opencode-sync.json");
+  const workflowDir = join(process.cwd(), ".github", "workflows");
+  const workflowPath = join(workflowDir, "opencode-agent.yml");
+
+  if (!existsSync(opencodeDir)) {
+    if (args.verbose) console.log("Creating .opencode directory...");
+    mkdirSync(opencodeDir, { recursive: true });
+  }
+
+  if (!existsSync(configPath)) {
+    const exampleConfig = {
+      defaults: {
+        environment: "copilot",
+        secretName: "OPENCODE_AUTH_BUNDLE",
+        sync: {
+          auth: {
+            "antigravity-accounts": true,
+            auth: true,
+          },
+          config: {
+            mode: "merge",
+            model: "google/antigravity-gemini-3-flash",
+            plugins: ["opencode-antigravity-auth@1.2.8"],
+          },
+        },
+      },
+      targets: {
+        default: {
+          repo: "owner/repo-name",
+          sync: {},
+        },
+      },
+    };
+
+    await Bun.write(configPath, JSON.stringify(exampleConfig, null, 2));
+    console.log(`✅ Created config: .opencode/opencode-sync.json`);
+  } else {
+    console.log(`ℹ️  Config already exists: .opencode/opencode-sync.json`);
+  }
+
+  if (!existsSync(workflowPath)) {
+    if (args.verbose) console.log("Creating workflow directory...");
+    mkdirSync(workflowDir, { recursive: true });
+
+    const workflowContent = `# minimal opencode agent setup
+name: OpenCode Agent
+on: workflow_dispatch
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    environment: copilot  # Required for secret access
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: oven-sh/setup-bun@v1
+
+      # Install opencode and restore auth in one step
+      - uses: ./  # Uses the action in the repo root (if running inside this repo)
+                  # In real usage: uses: user/opencode-sync@v1
+        with:
+          bundle: \${{ secrets.OPENCODE_AUTH_BUNDLE }}
+      
+      # Now opencode is ready to use!
+      - run: opencode run "Check the code for issues"
+`;
+    await Bun.write(workflowPath, workflowContent);
+    console.log(`✅ Created workflow: .github/workflows/opencode-agent.yml`);
+  } else {
+    console.log(
+      `ℹ️  Workflow already exists: .github/workflows/opencode-agent.yml`
+    );
+  }
+
+  console.log("\nNext steps:");
+  console.log("1. Edit .opencode/opencode-sync.json with your repo details");
+  console.log("2. Run 'opencode-sync sync default' to push your auth");
+}
+
+async function handleList(args: { config?: string }) {
+  const configPath = findConfigFile(process.cwd(), args.config);
+
+  if (!configPath) {
+    console.error("❌ No config file found");
+    process.exit(1);
+  }
+
+  const config = await loadConfig(configPath);
+  const targets = resolveAllTargets(config);
+
+  if (targets.length === 0) {
+    console.log("No targets configured");
+    return;
+  }
+
+  console.log("TARGETS:\n");
+  for (const target of targets) {
+    console.log(`  ${target.name}`);
+    console.log(`    Repo:        ${target.repo}`);
+    console.log(`    Environment: ${target.environment}`);
+    console.log(`    Secret:      ${target.secretName}`);
+    console.log(`    Config mode: ${target.sync.config.mode}`);
+    if (target.sync.config.model) {
+      console.log(`    Model override: ${target.sync.config.model}`);
+    }
+    console.log(
+      `    Auth files:  ${
+        Object.entries(target.sync.auth)
+          .filter(([, v]) => v)
+          .map(([k]) => k)
+          .join(", ") || "none"
+      }`
+    );
+    console.log();
+  }
+}
+
+async function handleCheck(args: { verbose: boolean }) {
+  const paths = getOpenCodePaths();
+  const files = [
+    { name: "antigravity-accounts.json", path: paths.antigravityAccounts },
+    { name: "auth.json", path: paths.auth },
+    { name: "credentials.json", path: paths.credentials },
+    { name: "opencode.jsonc", path: paths.opencodeConfig },
+  ];
+
+  console.log("OpenCode Auth Files:\n");
+
+  let allPresent = true;
+  for (const file of files) {
+    const exists = existsSync(file.path);
+    const symbol = exists ? "✅" : "❌";
+    console.log(`  ${symbol} ${file.name}`);
+    if (args.verbose) {
+      console.log(`     ${file.path}`);
+    }
+    if (!exists && file.name !== "credentials.json") {
+      allPresent = false;
+    }
+  }
+
+  console.log();
+  if (!allPresent) {
+    console.log(
+      "⚠️  Some auth files are missing. Run 'opencode auth google' to authenticate."
+    );
+  } else {
+    console.log("✅ All required auth files present");
+  }
+}
+
+// --- Main ---
+
+const result = await run(app, {
+  programName: "opencode-sync",
+  version: VERSION,
+  description: message`Sync OpenCode config/auth to GitHub secrets`,
+  help: "both",
+});
+
+switch (result.kind) {
+  case "sync":
+    await handleSync(result);
+    break;
+  case "restore":
+    await handleRestore(result);
+    break;
+  case "init":
+    await handleInit(result);
+    break;
+  case "list":
+    await handleList(result);
+    break;
+  case "check":
+    await handleCheck(result);
+    break;
+}

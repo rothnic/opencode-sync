@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# ==========================================
+# SECRETS PROTECTION - NEVER COMMIT THESE
+# ==========================================
+
+# OpenCode auth files (these contain OAuth tokens!)
+antigravity-accounts.json
+auth.json
+credentials.json
+
+# Any file with 'secret' or 'token' in name
+*secret*
+*token*
+*.secret
+*.token
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Bundle artifacts (contain auth data)
+*.bundle
+*.bundle.b64
+opencode-bundle*
+
+# Temporary files
+/tmp/
+*.tmp
+*.temp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test artifacts
+coverage/
+.nyc_output/

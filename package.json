@@ -1,0 +1,52 @@
+{
+  "name": "opencode-sync",
+  "version": "0.1.0",
+  "description": "Sync OpenCode configuration and auth to GitHub secrets for headless/CI environments",
+  "type": "module",
+  "bin": {
+    "opencode-sync": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./cli": "./src/cli.ts",
+    "./restore": "./src/restore.ts"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "prepare": "lefthook install"
+  },
+  "keywords": [
+    "opencode",
+    "github",
+    "copilot",
+    "auth",
+    "sync",
+    "antigravity",
+    "headless",
+    "ci"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/opencode-sync"
+  },
+  "dependencies": {
+    "@optique/core": "^0.9.0",
+    "@optique/run": "^0.9.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "lefthook": "^1.10.0",
+    "typescript": "^5.7.0"
+  },
+  "peerDependencies": {
+    "bun": ">=1.0.0"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}

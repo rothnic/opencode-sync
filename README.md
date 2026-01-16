@@ -1,8 +1,8 @@
 # OpenCode Sync
 
-Sync your local OpenCode authentication and configuration to GitHub secrets for use in GitHub Copilot agents and CI workflows.
+Sync your local OpenCode authentication and configuration to GitHub Secrets for use in GitHub Copilot Agents and CI workflows.
 
-This tool is the "missing link" that enables [OpenCode GitHub Integration](https://opencode.ai/docs/github/) to work in headless environments like GitHub Actions or Copilot Agents.
+This tool is the "missing link" that enables [OpenCode GitHub Integration](https://opencode.ai/docs/github/) to work in headless environments like GitHub Actions or GitHub Copilot Agents.
 
 ## How It Works
 
@@ -19,7 +19,7 @@ graph LR
     subgraph GitHub["GitHub Environment"]
         E --> F{GitHub Action}
         F -- "Restore" --> G[Headless OpenCode]
-        G --> H[Copilot Agent]
+        G --> H[GitHub Copilot Agent]
     end
     
     style B fill:#f9f,stroke:#333,stroke-width:4px
@@ -59,7 +59,7 @@ Edit `.opencode/opencode-sync.jsonc`.
     "sync": {
       "auth": { "antigravity-accounts": true, "auth": true },
       // Sync entire directories
-      "opencodeConfigDir": false, 
+      "opencodeConfigDir": false,
       "opencodeDataDir": false,
       
       "config": {
@@ -78,7 +78,7 @@ Edit `.opencode/opencode-sync.jsonc`.
     }
   },
   "targets": {
-    "prod": { "repo": "myuser/my-repo" }
+    "prod": { "repo": "rothnic/opencode-sync" }
   }
 }
 ```
@@ -86,7 +86,7 @@ Edit `.opencode/opencode-sync.jsonc`.
 
 ### 3. Sync
 
-Push your local auth to the repo's secret:
+Push your local auth to the repo's Secrets:
 
 ```bash
 bunx opencode-sync sync
@@ -109,11 +109,11 @@ jobs:
       - uses: oven-sh/setup-bun@v1
       
       # Restore auth & install opencode
-      - uses: myuser/opencode-sync@v1
+      - uses: rothnic/opencode-sync@v1
         with:
           bundle: ${{ secrets.OPENCODE_AUTH_BUNDLE }}
           
-      # Run agent via command
+      # Run Agent via command
       - run: opencode run --command "manage-issues" "Analyze this PR"
 ```
 </details>
@@ -151,7 +151,7 @@ classDiagram
 ```
 
 ### Key Components
-- [src/cli.ts](src/cli.ts): Main entry point using Optique.
+- [src/cli.ts](src/cli.ts): Main entry point using `optique`.
 - [src/bundle.ts](src/bundle.ts): Core logic for collecting files and creating secure bundles.
 - [src/config.ts](src/config.ts): Configuration resolution and merging.
 - [src/github.ts](src/github.ts): GitHub CLI integration.

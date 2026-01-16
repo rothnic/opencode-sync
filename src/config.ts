@@ -15,14 +15,22 @@ const CONFIG_FILENAME = "opencode-sync.json";
 const DEFAULTS = {
   environment: "copilot",
   secretName: "OPENCODE_AUTH_BUNDLE",
-  auth: {
-    "antigravity-accounts": true,
-    auth: true,
-    credentials: false,
-  } satisfies AuthSync,
-  config: {
-    mode: "none",
-  } satisfies ConfigSync,
+  sync: {
+    auth: {
+      "antigravity-accounts": true,
+      auth: true,
+      credentials: false,
+    },
+    config: {
+      mode: "none",
+    },
+    agents: true,
+    skills: true,
+    commands: true,
+    opencodeConfigDir: false,
+    opencodeDataDir: false,
+    include: [],
+  } satisfies SyncSpec,
 };
 
 /**
@@ -30,16 +38,23 @@ const DEFAULTS = {
  */
 export function getConfigSearchPaths(cwd: string = process.cwd()): string[] {
   const home = homedir();
-  return [
+  const searchPaths = [
     // Per-project (highest priority)
     join(cwd, CONFIG_FILENAME),
+    join(cwd, CONFIG_FILENAME.replace(".json", ".jsonc")),
     join(cwd, ".opencode", CONFIG_FILENAME),
+    join(cwd, ".opencode", CONFIG_FILENAME.replace(".json", ".jsonc")),
     join(cwd, ".config", CONFIG_FILENAME),
+    join(cwd, ".config", CONFIG_FILENAME.replace(".json", ".jsonc")),
     // Global (lower priority)
     join(home, ".config", "opencode-sync", CONFIG_FILENAME),
+    join(home, ".config", "opencode-sync", CONFIG_FILENAME.replace(".json", ".jsonc")),
     join(home, ".config", "opencode", CONFIG_FILENAME.replace(".json", ".json")),
+    join(home, ".config", "opencode", CONFIG_FILENAME.replace(".json", ".jsonc")),
     join(home, CONFIG_FILENAME),
+    join(home, CONFIG_FILENAME.replace(".json", ".jsonc")),
   ];
+  return searchPaths;
 }
 
 /**
@@ -71,13 +86,13 @@ export async function loadConfig(path: string): Promise<SyncConfig> {
  */
 function mergeSyncSpec(spec: SyncSpec | undefined, defaults: SyncSpec | undefined): Required<SyncSpec> {
   const mergedAuth: AuthSync = {
-    ...DEFAULTS.auth,
+    ...DEFAULTS.sync.auth,
     ...defaults?.auth,
     ...spec?.auth,
   };
 
   const mergedConfig: ConfigSync = {
-    ...DEFAULTS.config,
+    ...DEFAULTS.sync.config,
     ...defaults?.config,
     ...spec?.config,
   };
@@ -85,6 +100,12 @@ function mergeSyncSpec(spec: SyncSpec | undefined, defaults: SyncSpec | undefine
   return {
     auth: mergedAuth,
     config: mergedConfig,
+    agents: spec?.agents ?? defaults?.agents ?? DEFAULTS.sync.agents,
+    skills: spec?.skills ?? defaults?.skills ?? DEFAULTS.sync.skills,
+    commands: spec?.commands ?? defaults?.commands ?? DEFAULTS.sync.commands,
+    opencodeConfigDir: spec?.opencodeConfigDir ?? defaults?.opencodeConfigDir ?? DEFAULTS.sync.opencodeConfigDir,
+    opencodeDataDir: spec?.opencodeDataDir ?? defaults?.opencodeDataDir ?? DEFAULTS.sync.opencodeDataDir,
+    include: spec?.include ?? defaults?.include ?? DEFAULTS.sync.include,
   };
 }
 

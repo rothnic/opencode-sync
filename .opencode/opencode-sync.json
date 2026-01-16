@@ -4,9 +4,10 @@
     "secretName": "OPENCODE_AUTH_BUNDLE",
     "sync": {
       "auth": {
-        "antigravity-accounts": true,
-        "auth": true
+        "presets": ["antigravity", "auth"]
       },
+      "agents": true,
+      "commands": true,
       "config": {
         "mode": "merge",
         "model": "google/antigravity-gemini-3-flash",

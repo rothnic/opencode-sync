@@ -4,7 +4,20 @@ export const AuthSyncSchema = z.object({
   "antigravity-accounts": z.boolean().default(true),
   auth: z.boolean().default(true),
   credentials: z.boolean().default(false),
+  presets: z.array(z.string()).optional(),
 });
+
+export const AgentSyncSchema = z.boolean().default(true);
+export const SkillSyncSchema = z.boolean().default(true);
+export const CommandSyncSchema = z.boolean().default(true);
+
+export const FileSyncSchema = z.union([
+  z.string(),
+  z.object({
+    source: z.string(),
+    dest: z.string(),
+  })
+]);
 
 export const ConfigSyncSchema = z.object({
   mode: z.enum(["full", "merge", "none"]).default("none"),
@@ -17,6 +30,12 @@ export const ConfigSyncSchema = z.object({
 export const SyncSpecSchema = z.object({
   config: ConfigSyncSchema.optional(),
   auth: AuthSyncSchema.optional(),
+  agents: AgentSyncSchema.optional(),
+  skills: SkillSyncSchema.optional(),
+  commands: CommandSyncSchema.optional(),
+  opencodeConfigDir: z.boolean().default(false),
+  opencodeDataDir: z.boolean().default(false),
+  include: z.array(FileSyncSchema).optional(),
 });
 
 export const TargetConfigSchema = z.object({
@@ -49,6 +68,12 @@ export interface ResolvedTarget {
   sync: {
     auth: z.infer<typeof AuthSyncSchema>;
     config: z.infer<typeof ConfigSyncSchema>;
+    agents: boolean;
+    skills: boolean;
+    commands: boolean;
+    opencodeConfigDir: boolean;
+    opencodeDataDir: boolean;
+    include?: Array<string | { source: string; dest: string }>;
   };
 }
 
@@ -58,7 +83,7 @@ export interface BundleManifest {
   target: string;
   files: Array<{
     path: string;
-    relativeTo: "config" | "data";
+    relativeTo: "config" | "data" | "root";
   }>;
   configMode: "full" | "merge" | "none";
 }

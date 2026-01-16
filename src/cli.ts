@@ -189,7 +189,7 @@ async function handleRestore(args: { envVar: string; verbose: boolean }) {
 
 async function handleInit(args: { verbose: boolean }) {
   const opencodeDir = join(process.cwd(), ".opencode");
-  const configPath = join(opencodeDir, "opencode-sync.json");
+  const configPath = join(opencodeDir, "opencode-sync.jsonc");
   const workflowDir = join(process.cwd(), ".github", "workflows");
   const workflowPath = join(workflowDir, "opencode-agent.yml");
 
@@ -198,35 +198,175 @@ async function handleInit(args: { verbose: boolean }) {
     mkdirSync(opencodeDir, { recursive: true });
   }
 
-  if (!existsSync(configPath)) {
-    const exampleConfig = {
-      defaults: {
-        environment: "copilot",
-        secretName: "OPENCODE_AUTH_BUNDLE",
-        sync: {
-          auth: {
-            "antigravity-accounts": true,
-            auth: true,
-          },
-          config: {
-            mode: "merge",
-            model: "google/antigravity-gemini-3-flash",
-            plugins: ["opencode-antigravity-auth@1.2.8"],
-          },
-        },
+  if (!existsSync(configPath) && !existsSync(join(opencodeDir, "opencode-sync.json"))) {
+    const configContent = `/**
+ * OpenCode Sync Configuration
+ * 
+ * This file controls what local OpenCode data is synced to GitHub Secrets
+ * for use in GitHub Copilot Agents and CI workflows.
+ * 
+ * Run 'opencode-sync sync' to apply changes.
+ */
+{
+  "defaults": {
+    "environment": "copilot", // The GitHub environment to sync secrets to
+    "secretName": "OPENCODE_AUTH_BUNDLE", // The secret name (matches action input)
+    "sync": {
+      "auth": {
+        "antigravity-accounts": true, // Sync Google Antigravity OAuth tokens
+        "auth": true, // Sync session state
+        // "credentials": true // Uncomment if you use API keys in credentials.json
       },
-      targets: {
-        default: {
-          repo: "owner/repo-name",
-          sync: {},
-        },
-      },
-    };
+      "config": {
+        // "mode": "full", // Sync your entire local opencode.jsonc
+        "mode": "merge", // Recommended: Merge specific settings into the default
+        
+        // Override the model for headless execution (e.g. use Flash for speed/cost)
+        "model": "google/antigravity-gemini-3-flash",
+        
+        // Ensure specific plugins are loaded
+        "plugins": [
+          "opencode-antigravity-auth@1.2.8",
+          "@opencode-ai/github" // Required for GitHub issue management
+        ],
+        
+        // Merge provider configs (e.g. API keys for Google)
+        "providers": {
+          "google": true
+        }
+      }
+    }
+  },
+  "targets": {
+    "default": {
+      // REPLACE THIS with your repository name
+      "repo": "owner/repo-name",
+      
+      // Override defaults for this target if needed
+      "sync": {}
+    }
+  }
+}
+`;
 
-    await Bun.write(configPath, JSON.stringify(exampleConfig, null, 2));
-    console.log(`✅ Created config: .opencode/opencode-sync.json`);
+    await Bun.write(configPath, configContent);
+    console.log("✅ Created config: .opencode/opencode-sync.jsonc");
   } else {
-    console.log(`ℹ️  Config already exists: .opencode/opencode-sync.json`);
+    console.log("ℹ️  Config already exists in .opencode/");
+  }
+
+  if (!existsSync(configPath) && !existsSync(join(opencodeDir, "opencode-sync.json"))) {
+    const configContent = `/**
+ * OpenCode Sync Configuration
+ * 
+ * This file controls what local OpenCode data is synced to GitHub Secrets
+ * for use in GitHub Copilot Agents and CI workflows.
+ * 
+ * Run 'opencode-sync sync' to apply changes.
+ */
+{
+  "defaults": {
+    "environment": "copilot", // The GitHub environment to sync secrets to
+    "secretName": "OPENCODE_AUTH_BUNDLE", // The secret name (matches action input)
+    "sync": {
+      "auth": {
+        "antigravity-accounts": true, // Sync Google Antigravity OAuth tokens
+        "auth": true, // Sync session state
+        // "credentials": true // Uncomment if you use API keys in credentials.json
+      },
+      "config": {
+        // "mode": "full", // Sync your entire local opencode.jsonc
+        "mode": "merge", // Recommended: Merge specific settings into the default
+        
+        // Override the model for headless execution (e.g. use Flash for speed/cost)
+        "model": "google/antigravity-gemini-3-flash",
+        
+        // Ensure specific plugins are loaded
+        "plugins": [
+          "opencode-antigravity-auth@1.2.8",
+          "@opencode-ai/github" // Required for GitHub issue management
+        ],
+        
+        // Merge provider configs (e.g. API keys for Google)
+        "providers": {
+          "google": true
+        }
+      }
+    }
+  },
+  "targets": {
+    "default": {
+      // REPLACE THIS with your repository name
+      "repo": "owner/repo-name",
+      
+      // Override defaults for this target if needed
+      "sync": {}
+    }
+  }
+}
+`;
+
+    await Bun.write(configPath, configContent);
+    console.log("✅ Created config: .opencode/opencode-sync.jsonc");
+  } else {
+    console.log("ℹ️  Config already exists in .opencode/");
+  }
+
+  if (!existsSync(configPath) && !existsSync(join(opencodeDir, "opencode-sync.json"))) {
+    const configContent = `/**
+ * OpenCode Sync Configuration
+ * 
+ * This file controls what local OpenCode data is synced to GitHub Secrets
+ * for use in GitHub Copilot Agents and CI workflows.
+ * 
+ * Run 'opencode-sync sync' to apply changes.
+ */
+{
+  "defaults": {
+    "environment": "copilot", // The GitHub environment to sync secrets to
+    "secretName": "OPENCODE_AUTH_BUNDLE", // The secret name (matches action input)
+    "sync": {
+      "auth": {
+        "antigravity-accounts": true, // Sync Google Antigravity OAuth tokens
+        "auth": true, // Sync session state
+        // "credentials": true // Uncomment if you use API keys in credentials.json
+      },
+      "config": {
+        // "mode": "full", // Sync your entire local opencode.jsonc
+        "mode": "merge", // Recommended: Merge specific settings into the default
+        
+        // Override the model for headless execution (e.g. use Flash for speed/cost)
+        "model": "google/antigravity-gemini-3-flash",
+        
+        // Ensure specific plugins are loaded
+        "plugins": [
+          "opencode-antigravity-auth@1.2.8",
+          "@opencode-ai/github" // Required for GitHub issue management
+        ],
+        
+        // Merge provider configs (e.g. API keys for Google)
+        "providers": {
+          "google": true
+        }
+      }
+    }
+  },
+  "targets": {
+    "default": {
+      // REPLACE THIS with your repository name
+      "repo": "owner/repo-name",
+      
+      // Override defaults for this target if needed
+      "sync": {}
+    }
+  }
+}
+`;
+
+    await Bun.write(configPath, configContent);
+    console.log("✅ Created config: .opencode/opencode-sync.jsonc");
+  } else {
+    console.log("ℹ️  Config already exists in .opencode/");
   }
 
   if (!existsSync(workflowPath)) {

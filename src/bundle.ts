@@ -1,14 +1,10 @@
-/**
- * @file bundle.ts
- * @description Create tar.gz bundles of auth files and config for transport
- */
-
-import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { basename, dirname, join, relative } from "node:path";
+import { existsSync, mkdirSync, rmSync, readdirSync, statSync, cpSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import type { ResolvedTarget, BundleManifest } from "./types.js";
 import { getOpenCodePaths } from "./config.js";
 import { buildMergedConfig } from "./merge.js";
+import { getPreset, type Preset } from "./presets.js";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -16,7 +12,7 @@ type JsonObject = { [key: string]: JsonValue };
 interface BundleFile {
   sourcePath: string;
   targetPath: string;
-  relativeTo: "config" | "data";
+  relativeTo: "config" | "data" | "root";
 }
 
 export async function collectBundleFiles(
@@ -25,34 +21,136 @@ export async function collectBundleFiles(
   const paths = getOpenCodePaths();
   const files: BundleFile[] = [];
   const authSpec = target.sync.auth;
+  
+  // 1. Collect Presets
+  const presetsToLoad = new Set<string>();
+  
+  if (authSpec?.presets) {
+    for (const p of authSpec.presets) presetsToLoad.add(p);
+  }
 
-  if (authSpec["antigravity-accounts"]) {
-    if (existsSync(paths.antigravityAccounts)) {
+  // Legacy mappings
+  if (authSpec?.["antigravity-accounts"]) presetsToLoad.add("antigravity");
+  if (authSpec?.auth) presetsToLoad.add("auth");
+  if (authSpec?.credentials) presetsToLoad.add("credentials");
+
+  // Process Presets
+  for (const presetName of presetsToLoad) {
+    const preset = getPreset(presetName);
+    if (!preset) {
+      console.warn(`Warning: Unknown preset '${presetName}'`);
+      continue;
+    }
+
+    for (const file of preset.files) {
+      // Determine source root based on file type
+      const sourceRoot = file.type === "config" ? paths.configDir : paths.dataDir;
+      const sourcePath = join(sourceRoot, file.path);
+
+      if (existsSync(sourcePath)) {
+        files.push({
+          sourcePath,
+          targetPath: file.path, // Use same relative path in bundle
+          relativeTo: file.type,
+        });
+      }
+    }
+  }
+
+  // 2. Agents
+  if (target.sync.agents) {
+    const projectAgentDir = join(process.cwd(), ".opencode", "agent");
+    if (existsSync(projectAgentDir)) {
+      const agentFiles = readdirSync(projectAgentDir).filter(f => f.endsWith(".md"));
+      for (const file of agentFiles) {
+        files.push({
+          sourcePath: join(projectAgentDir, file),
+          targetPath: join("agent", file),
+          relativeTo: "config"
+        });
+      }
+    }
+  }
+
+  // 3. Skills
+  if (target.sync.skills) {
+    const projectSkillDir = join(process.cwd(), ".opencode", "skill");
+    if (existsSync(projectSkillDir)) {
+      const skills = readdirSync(projectSkillDir);
+      for (const skill of skills) {
+        const skillPath = join(projectSkillDir, skill);
+        if (statSync(skillPath).isDirectory()) {
+          const skillFile = join(skillPath, "SKILL.md");
+          if (existsSync(skillFile)) {
+            files.push({
+              sourcePath: skillFile,
+              targetPath: join("skill", skill, "SKILL.md"),
+              relativeTo: "config"
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Commands
+  if (target.sync.commands) {
+    const projectCmdDir = join(process.cwd(), ".opencode", "command");
+    if (existsSync(projectCmdDir)) {
+      const cmdFiles = readdirSync(projectCmdDir).filter(f => f.endsWith(".md"));
+      for (const file of cmdFiles) {
+        files.push({
+          sourcePath: join(projectCmdDir, file),
+          targetPath: join("command", file),
+          relativeTo: "config"
+        });
+      }
+    }
+  }
+
+  // 5. Full Directories
+  if (target.sync.opencodeConfigDir) {
+    if (existsSync(paths.configDir)) {
       files.push({
-        sourcePath: paths.antigravityAccounts,
-        targetPath: "antigravity-accounts.json",
-        relativeTo: "config",
+        sourcePath: paths.configDir,
+        targetPath: ".",
+        relativeTo: "config" 
       });
     }
   }
 
-  if (authSpec.auth) {
-    if (existsSync(paths.auth)) {
+  if (target.sync.opencodeDataDir) {
+    if (existsSync(paths.dataDir)) {
       files.push({
-        sourcePath: paths.auth,
-        targetPath: "auth.json",
-        relativeTo: "data",
+        sourcePath: paths.dataDir,
+        targetPath: ".",
+        relativeTo: "data"
       });
     }
   }
 
-  if (authSpec.credentials) {
-    if (existsSync(paths.credentials)) {
-      files.push({
-        sourcePath: paths.credentials,
-        targetPath: "credentials.json",
-        relativeTo: "config",
-      });
+  // 6. Generic Includes
+  if (target.sync.include) {
+    for (const item of target.sync.include) {
+      if (typeof item === 'string') {
+        const source = resolve(process.cwd(), item);
+        if (existsSync(source)) {
+          files.push({
+            sourcePath: source,
+            targetPath: item,
+            relativeTo: "data" 
+          });
+        }
+      } else {
+        const source = resolve(process.cwd(), item.source);
+        if (existsSync(source)) {
+          files.push({
+            sourcePath: source,
+            targetPath: item.dest,
+            relativeTo: "data"
+          });
+        }
+      }
     }
   }
 
@@ -69,7 +167,6 @@ export async function buildBundleConfig(
     return null;
   }
 
-  // Load source config
   let sourceConfig: JsonObject = {};
   if (existsSync(paths.opencodeConfig)) {
     try {
@@ -228,16 +325,18 @@ export async function restoreBundle(
       const srcPath = join(srcDir, file.path);
       const destPath = join(destDir, file.path);
 
+      mkdirSync(dirname(destPath), { recursive: true });
+
       if (existsSync(srcPath)) {
         if (verbose) {
           console.log(`  📄 ${file.path} -> ${destPath}`);
         }
-        await Bun.write(destPath, Bun.file(srcPath));
+        cpSync(srcPath, destPath, { recursive: true, force: true });
       }
     }
 
     if (verbose) {
-      console.log(`  ✅ Restored ${manifest.files.length} files`);
+      console.log(`  ✅ Restored ${manifest.files.length} items`);
     }
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });

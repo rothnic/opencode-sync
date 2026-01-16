@@ -29,4 +29,4 @@ jobs:
 
       # Now opencode is ready to use!
       - name: Run OpenCode Issue Manager
-        run: opencode run --file .opencode/prompts/issue-manager.md "Check for any open issues and attempt to resolve the highest priority one."
+        run: opencode run --command "/issue-manager"

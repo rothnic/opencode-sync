@@ -1,0 +1,427 @@
+# OpenCode Agent Dispatcher
+# A unified workflow that runs different agent commands via workflow_dispatch.
+# Supports manual triggers, scheduled runs, and API invocation.
+#
+# Commands:
+# - project-review: Audit security, dependencies, code improvements
+# - issue-triage: Review open issues for clarity, add context, mark readiness
+# - issue-discover: Scan codebase for potential issues (TODOs, bugs, tech debt)
+# - issue-organize: Group issues into phases, identify dependencies
+#
+# Schedule: Runs issue-triage weekly, project-review monthly by default.
+#
+# Idempotency: All commands check for existing work before creating duplicates.
+
+name: OpenCode Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'Agent command to run'
+        required: true
+        type: choice
+        options:
+          - project-review
+          - issue-triage
+          - issue-discover
+          - issue-organize
+          - custom
+      custom_prompt:
+        description: 'Custom prompt (only used with "custom" command)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run - analyze only, do not modify issues'
+        required: false
+        type: boolean
+        default: false
+      issue_filter:
+        description: 'Filter issues (e.g., "label:bug", "no:label", "is:open")'
+        required: false
+        type: string
+        default: 'is:open'
+
+  schedule:
+    - cron: '0 9 * * 1'
+    - cron: '0 9 1 * *'
+
+env:
+  REPO: ${{ github.repository }}
+  DRY_RUN: ${{ inputs.dry_run || 'false' }}
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    environment: copilot
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Restore OpenCode Auth
+        uses: rothnic/opencode-sync@v1
+        with:
+          bundle: ${{ secrets.OPENCODE_AUTH_BUNDLE }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "OpenCode Agent"
+          git config --global user.email "agent@opencode.ai"
+
+      - name: Determine command
+        id: command
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            DAY=$(date -u +%d)
+            if [ "$DAY" = "01" ]; then
+              echo "command=project-review" >> $GITHUB_OUTPUT
+            else
+              echo "command=issue-triage" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "command=${{ inputs.command }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Gather project context
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/context
+          
+          gh issue list -R $REPO --state open --limit 100 --json number,title,body,labels,assignees,createdAt,updatedAt > /tmp/context/issues.json
+          
+          gh pr list -R $REPO --state open --limit 50 --json number,title,body,labels,isDraft,headRefName > /tmp/context/prs.json
+          
+          REVIEW_ISSUE=$(gh issue list -R $REPO --label "project-review" --state open --limit 1 --json number -q '.[0].number // empty')
+          echo "review_issue=$REVIEW_ISSUE" >> $GITHUB_OUTPUT
+          
+          TRIAGE_ISSUE=$(gh issue list -R $REPO --label "triage-summary" --state open --limit 1 --json number -q '.[0].number // empty')
+          echo "triage_issue=$TRIAGE_ISSUE" >> $GITHUB_OUTPUT
+          
+          ROADMAP_ISSUE=$(gh issue list -R $REPO --label "roadmap" --state open --limit 1 --json number -q '.[0].number // empty')
+          echo "roadmap_issue=$ROADMAP_ISSUE" >> $GITHUB_OUTPUT
+          
+          AGENT_BRANCH=$(gh pr list -R $REPO --head "opencode-agent" --state open --limit 1 --json number -q '.[0].number // empty')
+          echo "agent_pr=$AGENT_BRANCH" >> $GITHUB_OUTPUT
+          
+          if [ -f "package.json" ]; then
+            cp package.json /tmp/context/
+            bun outdated --json 2>/dev/null > /tmp/context/outdated.json || echo "[]" > /tmp/context/outdated.json
+          fi
+          
+          gh api repos/$REPO --jq '{name,description,topics,language,default_branch}' > /tmp/context/repo.json
+          
+          cat > /tmp/context/existing-work.json << EOF
+          {
+            "review_issue": "$REVIEW_ISSUE",
+            "triage_issue": "$TRIAGE_ISSUE", 
+            "roadmap_issue": "$ROADMAP_ISSUE",
+            "agent_pr": "$AGENT_BRANCH"
+          }
+          EOF
+
+      - name: Run project-review
+        if: steps.command.outputs.command == 'project-review'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXISTING_REVIEW_ISSUE: ${{ steps.context.outputs.review_issue }}
+        run: |
+          opencode run --print "$(cat <<'PROMPT'
+          # Project Review Agent
+
+          You are conducting a comprehensive project review.
+
+          ## CRITICAL: Check for Existing Work First!
+
+          Existing review issue: $EXISTING_REVIEW_ISSUE
+          
+          If an existing review issue number is set:
+          1. READ the existing issue to see what was already reviewed
+          2. UPDATE it with new findings rather than creating a new issue
+          3. Use: gh issue comment $EXISTING_REVIEW_ISSUE -R $REPO --body "..."
+          4. Or edit: gh issue edit $EXISTING_REVIEW_ISSUE -R $REPO --body "..."
+
+          If NO existing issue, create one with label "project-review":
+          gh issue create -R $REPO --title "Project Review - [DATE]" --label "project-review" --body "..."
+
+          ## Review Areas
+
+          ### 1. Security Audit
+          - Check for vulnerabilities: bun audit or npm audit
+          - Review for hardcoded secrets, API keys
+          - Check for insecure patterns (eval, SQL injection vectors)
+
+          ### 2. Dependency Health  
+          - Review /tmp/context/outdated.json for outdated packages
+          - Identify major version updates available
+          - Flag deprecated dependencies
+
+          ### 3. Code Quality
+          - Identify code smells, dead code
+          - Check for TODO/FIXME/HACK comments
+          - Review error handling patterns
+
+          ### 4. Documentation
+          - Check README completeness
+          - Verify API documentation is current
+
+          ## Output Format
+
+          ### 🔴 Critical (Security/Breaking)
+          [Items requiring immediate attention]
+
+          ### 🟡 Important (Should Address Soon)  
+          [Important improvements]
+
+          ### 🟢 Nice to Have
+          [Minor improvements]
+
+          ### 📊 Metrics
+          - Dependencies: X total, Y outdated, Z with security issues
+
+          DRY_RUN mode: $DRY_RUN
+          If DRY_RUN is true, output the review but do NOT modify issues.
+          PROMPT
+          )"
+
+      - name: Run issue-triage
+        if: steps.command.outputs.command == 'issue-triage'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_FILTER: ${{ inputs.issue_filter || 'is:open' }}
+          EXISTING_TRIAGE_ISSUE: ${{ steps.context.outputs.triage_issue }}
+        run: |
+          opencode run --print "$(cat <<'PROMPT'
+          # Issue Triage Agent
+
+          Review open issues and improve their quality for implementation-readiness.
+
+          ## CRITICAL: Avoid Duplicate Work!
+
+          1. Check /tmp/context/issues.json for each issue's existing comments
+          2. DO NOT re-comment on issues you've already triaged (check for "Triage Review" in comments)
+          3. Only comment on issues that NEED new clarity
+
+          Existing triage summary issue: $EXISTING_TRIAGE_ISSUE
+          
+          If set, UPDATE the existing summary rather than creating a new one.
+
+          ## Issues to Review
+          See /tmp/context/issues.json
+
+          ## For Each Issue, Evaluate:
+
+          ### Skip if:
+          - Already has a "Triage Review" comment from OpenCode Agent
+          - Already has label "ready"
+          - Was updated in the last 24 hours (let humans respond first)
+
+          ### Clarity Score (1-5)
+          - 5: Crystal clear, ready to implement
+          - 4: Minor clarification needed  
+          - 3: Needs context or acceptance criteria
+          - 2: Vague, multiple interpretations
+          - 1: Unclear what is being asked
+
+          ### What's Missing?
+          Think about what HASN'T been thought about:
+          - Edge cases? Dependencies? Technical constraints?
+          - User impact? Testing strategy? Rollback plan?
+
+          ## Actions
+
+          For issues scoring 3 or below (that haven't been triaged):
+          ```
+          gh issue comment NUMBER -R $REPO --body "## 🔍 Triage Review
+
+          **Clarity Score:** X/5
+
+          **Questions to Resolve:**
+          1. [Specific question]
+
+          **Suggested Acceptance Criteria:**
+          - [ ] [Testable criterion]
+
+          **Considerations:**
+          - [Edge case or constraint]
+          "
+          ```
+
+          For issues scoring 4-5, add label "ready":
+          gh issue edit NUMBER -R $REPO --add-label "ready"
+
+          ## Summary
+
+          After review, update or create triage summary (label: triage-summary):
+          "Triage Summary - [DATE]: Reviewed X issues, Y ready, Z need clarification, W already triaged (skipped)"
+
+          DRY_RUN mode: $DRY_RUN
+          PROMPT
+          )"
+
+      - name: Run issue-discover
+        if: steps.command.outputs.command == 'issue-discover'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          opencode run --print "$(cat <<'PROMPT'
+          # Issue Discovery Agent
+
+          Scan the codebase for potential issues that should be tracked.
+
+          ## CRITICAL: Check for Duplicates First!
+
+          Before creating ANY issue:
+          1. Search /tmp/context/issues.json for similar existing issues
+          2. Search by keywords: gh issue list -R $REPO --search "keyword"
+          3. If similar issue exists, ADD A COMMENT instead of creating duplicate
+          4. Group related items into single issues
+
+          ## What to Look For
+
+          ### 1. Code Markers
+          ```bash
+          grep -rn "TODO\|FIXME\|HACK\|XXX\|BUG" --include="*.ts" --include="*.js" .
+          ```
+
+          ### 2. Technical Debt
+          - Functions over 100 lines
+          - Files over 500 lines  
+          - any/unknown type usage
+          - Commented-out code blocks
+
+          ### 3. Missing Infrastructure
+          - Tests missing for critical paths
+          - Error handling gaps
+          - Documentation gaps
+
+          ## Output
+
+          For genuinely NEW discoveries (not already tracked):
+          ```bash
+          gh issue create -R $REPO \
+            --title "[Type] Brief description" \
+            --label "auto-discovered" \
+            --body "## Found In
+          file:line
+
+          ## Description
+          [What was found]
+
+          ## Priority
+          [low/medium/high]
+
+          ---
+          *Auto-discovered by OpenCode Agent*"
+          ```
+
+          Group similar items (e.g., "Clean up 15 TODO comments in auth module")
+
+          DRY_RUN mode: $DRY_RUN
+          PROMPT
+          )"
+
+      - name: Run issue-organize
+        if: steps.command.outputs.command == 'issue-organize'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXISTING_ROADMAP_ISSUE: ${{ steps.context.outputs.roadmap_issue }}
+        run: |
+          opencode run --print "$(cat <<'PROMPT'
+          # Issue Organization Agent
+
+          Organize open issues into a coherent roadmap.
+
+          ## CRITICAL: Update Existing Roadmap!
+
+          Existing roadmap issue: $EXISTING_ROADMAP_ISSUE
+          
+          If set, UPDATE the existing roadmap rather than creating a new one:
+          gh issue edit $EXISTING_ROADMAP_ISSUE -R $REPO --body "..."
+
+          If no existing roadmap, create one with label "roadmap":
+          gh issue create -R $REPO --title "Project Roadmap" --label "roadmap" --body "..."
+
+          ## Issues to Analyze
+          See /tmp/context/issues.json
+
+          ## Tasks
+
+          ### 1. Identify Dependencies
+          For each issue, check if dependency info already exists before adding:
+          - What issues must be completed BEFORE this one?
+          - What issues are BLOCKED BY this one?
+
+          ### 2. Group into Phases
+          - **Phase 1: Foundation** - Core infrastructure, critical bugs
+          - **Phase 2: Features** - User-facing functionality  
+          - **Phase 3: Polish** - UX improvements, optimizations
+          - **Phase 4: Future** - Nice-to-haves
+
+          ### 3. Roadmap Format
+          ```markdown
+          # Project Roadmap
+          Last updated: [DATE]
+
+          ## Phase 1: Foundation
+          - [ ] #X - [Title] (blocked by: none)
+          - [ ] #Y - [Title] (blocked by: #X)
+
+          ## Phase 2: Features
+          ...
+          ```
+
+          ### 4. Apply Labels (only if not already present)
+          - phase:1-foundation
+          - phase:2-features
+          - phase:3-polish
+          - phase:4-future
+
+          DRY_RUN mode: $DRY_RUN
+          PROMPT
+          )"
+
+      - name: Run custom command
+        if: steps.command.outputs.command == 'custom'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CUSTOM_PROMPT: ${{ inputs.custom_prompt }}
+        run: |
+          opencode run --print "$CUSTOM_PROMPT
+
+          ## Available Context
+          - /tmp/context/issues.json - All open issues
+          - /tmp/context/prs.json - Open PRs  
+          - /tmp/context/existing-work.json - Existing agent work (avoid duplicates!)
+          - /tmp/context/repo.json - Repository info
+          - /tmp/context/package.json - Dependencies (if exists)
+          - /tmp/context/outdated.json - Outdated packages (if exists)
+
+          ## IMPORTANT: Avoid Duplicates
+          Check existing-work.json before creating new issues/PRs.
+          Update existing work when possible.
+
+          DRY_RUN mode: $DRY_RUN
+          Repository: $REPO"
+
+      - name: Post workflow summary
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "## OpenCode Agent Run" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Command:** ${{ steps.command.outputs.command }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dry Run:** $DRY_RUN" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Existing Work Detected" >> $GITHUB_STEP_SUMMARY
+          echo "- Review Issue: ${{ steps.context.outputs.review_issue || 'None' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Triage Issue: ${{ steps.context.outputs.triage_issue || 'None' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Roadmap Issue: ${{ steps.context.outputs.roadmap_issue || 'None' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Agent PR: ${{ steps.context.outputs.agent_pr || 'None' }}" >> $GITHUB_STEP_SUMMARY

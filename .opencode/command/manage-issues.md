@@ -13,7 +13,9 @@ agent: github
 
 3. Action:
    - If a relevant issue is found, pick the highest priority one.
-   - Create a fix branch.
+   - Create a fix branch immediately.
+   - Work incrementally: Commit your progress frequently (e.g., after reproducing, after fixing, after verifying).
+   - Be aware of the 30-minute workflow timeout. If running low on time, push current progress and exit gracefully.
    - Attempt to resolve it.
    - Create a PR.
 

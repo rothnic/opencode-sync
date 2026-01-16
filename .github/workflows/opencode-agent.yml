@@ -38,7 +38,7 @@ jobs:
 
       # Now opencode is ready to use!
       - name: Run OpenCode Issue Manager
-        timeout-minutes: 5
+        timeout-minutes: 30
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: opencode run --command "manage-issues"

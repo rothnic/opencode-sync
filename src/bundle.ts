@@ -69,13 +69,14 @@ export async function buildBundleConfig(
     return null;
   }
 
+  // Load source config
   let sourceConfig: JsonObject = {};
   if (existsSync(paths.opencodeConfig)) {
-    const text = await Bun.file(paths.opencodeConfig).text();
-    const jsonText = text
-      .replace(/\/\/.*$/gm, "")
-      .replace(/\/\*[\s\S]*?\*\//g, "");
-    sourceConfig = JSON.parse(jsonText) as JsonObject;
+    try {
+      sourceConfig = await Bun.file(paths.opencodeConfig).json() as JsonObject;
+    } catch (e) {
+      console.warn(`Warning: Failed to parse ${paths.opencodeConfig}, proceeding with empty config.`);
+    }
   }
 
   return buildMergedConfig(sourceConfig, null, configSpec);

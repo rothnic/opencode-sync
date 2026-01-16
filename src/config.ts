@@ -63,15 +63,7 @@ export function findConfigFile(cwd?: string, explicitPath?: string): string | nu
  * Load and parse config file
  */
 export async function loadConfig(path: string): Promise<SyncConfig> {
-  const file = Bun.file(path);
-  const text = await file.text();
-  
-  // Strip comments for JSONC support
-  const jsonText = text
-    .replace(/\/\/.*$/gm, "") // Remove single-line comments
-    .replace(/\/\*[\s\S]*?\*\//g, ""); // Remove multi-line comments
-  
-  return JSON.parse(jsonText) as SyncConfig;
+  return Bun.file(path).json();
 }
 
 /**

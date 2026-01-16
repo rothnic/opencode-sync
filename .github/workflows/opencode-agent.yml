@@ -46,6 +46,11 @@ jobs:
           git config --global user.name "OpenCode Agent"
           git config --global user.email "agent@opencode.ai"
 
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name "OpenCode Agent"
+          git config --global user.email "agent@opencode.ai"
+
       # Now opencode is ready to use!
       - name: Run OpenCode Issue Manager
         timeout-minutes: 30

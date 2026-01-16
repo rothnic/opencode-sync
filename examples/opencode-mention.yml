@@ -1,0 +1,136 @@
+# @opencode Mention Handler
+# Triggers when someone mentions @opencode in an issue or PR comment.
+# The agent receives full context and can investigate, fix, or respond.
+#
+# Setup:
+# 1. Run `bunx opencode-sync sync` to push your auth to GitHub secrets
+# 2. Copy this file to .github/workflows/opencode-mention.yml
+# 3. Optionally create a GitHub bot account named "opencode" for cleaner UX
+
+name: OpenCode Mention Handler
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  handle-mention:
+    runs-on: ubuntu-latest
+    environment: copilot
+    if: |
+      contains(github.event.comment.body, '@opencode') &&
+      !github.event.comment.user.bot
+    
+    steps:
+      - name: Acknowledge mention
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes'
+            });
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.issue.pull_request.head.ref || github.ref }}
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Restore OpenCode Auth
+        uses: rothnic/opencode-sync@v1
+        with:
+          bundle: ${{ secrets.OPENCODE_AUTH_BUNDLE }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "OpenCode Agent"
+          git config --global user.email "agent@opencode.ai"
+
+      - name: Gather context
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p /tmp/context
+          
+          # Save issue/PR body
+          echo '${{ toJson(github.event.issue.body) }}' > /tmp/context/issue-body.txt
+          
+          # Get all comments for thread context
+          gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments \
+            --jq '.[] | "[\(.user.login)]: \(.body)"' > /tmp/context/comments.txt
+          
+          # If this is a PR, get the diff
+          if [ "${{ github.event.issue.pull_request != null }}" = "true" ]; then
+            gh pr diff ${{ github.event.issue.number }} > /tmp/context/pr.diff
+            gh pr view ${{ github.event.issue.number }} --json files -q '.files[].path' > /tmp/context/changed-files.txt
+          fi
+
+      - name: Extract prompt
+        id: prompt
+        run: |
+          # Extract everything after @opencode mention
+          COMMENT='${{ github.event.comment.body }}'
+          PROMPT=$(echo "$COMMENT" | sed 's/.*@opencode[[:space:]]*//')
+          echo "prompt<<EOF" >> $GITHUB_OUTPUT
+          echo "$PROMPT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Run OpenCode Agent
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          opencode run --print "
+          You were mentioned in a GitHub comment. Here is the context:
+          
+          Repository: ${{ github.repository }}
+          Issue/PR: #${{ github.event.issue.number }} - ${{ github.event.issue.title }}
+          Author: @${{ github.event.comment.user.login }}
+          Is PR: ${{ github.event.issue.pull_request != null }}
+          
+          Issue Body:
+          $(cat /tmp/context/issue-body.txt)
+          
+          Comment Thread:
+          $(cat /tmp/context/comments.txt)
+          
+          ${{ github.event.issue.pull_request != null && 'PR Diff available at /tmp/context/pr.diff' || '' }}
+          
+          User Request:
+          ${{ steps.prompt.outputs.prompt }}
+          
+          Instructions:
+          - Investigate the request thoroughly
+          - If code changes are needed and you can make them, do so and push
+          - Always respond by posting a comment with your findings using gh cli
+          "
+
+      - name: Post completion reaction
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+      - name: Post failure reaction
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'confused'
+            });

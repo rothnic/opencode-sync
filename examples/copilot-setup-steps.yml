@@ -1,8 +1,13 @@
-# Example: Copilot Agent Setup
-# Save this as .github/workflows/copilot-setup-steps.yml in your repository
+# GitHub Copilot Agent with OpenCode
+# Enables GitHub Copilot coding agent to use OpenCode with real Antigravity models.
+# Use case: Let Copilot investigate functionality, run tests, develop features using OpenCode.
 #
-# This example uses the opencode-sync action to restore auth.
-# The action handles: install, auth restoration, and headless mode.
+# Setup:
+# 1. Run `bunx opencode-sync sync` to push your auth to GitHub secrets
+# 2. Save this file as .github/workflows/copilot-setup-steps.yml
+# 3. Enable Copilot coding agent for your repository
+#
+# When Copilot runs, it will have access to the `opencode` CLI with your auth.
 
 name: Copilot Setup Steps
 
@@ -15,18 +20,26 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
 
-      # Use the opencode-sync action instead of manual shell commands
-      # This ensures the restore logic stays in sync with the canonical implementation
-      - name: Restore OpenCode Identity
+      - name: Restore OpenCode Auth
         uses: rothnic/opencode-sync@v1
         with:
           bundle: ${{ secrets.OPENCODE_AUTH_BUNDLE }}
-          # install: true (default) - installs opencode-ai and plugins
-          # headless: true (default) - sets OPENCODE_HEADLESS=1
 
-      - name: Verify auth
-        run: opencode auth status
+      - name: Configure Git for Copilot
+        run: |
+          git config --global user.name "GitHub Copilot"
+          git config --global user.email "copilot@github.com"
+
+      - name: Verify OpenCode setup
+        run: |
+          echo "OpenCode version: $(opencode --version)"
+          echo "Auth status:"
+          opencode auth status
+          echo ""
+          echo "Available commands:"
+          opencode --help

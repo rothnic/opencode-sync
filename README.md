@@ -118,6 +118,27 @@ jobs:
 ```
 </details>
 
+## Example Workflows
+
+### GitHub Copilot Agent + OpenCode
+
+Let GitHub Copilot's coding agent use OpenCode with real Antigravity models for investigating functionality, running tests, and developing features.
+
+See [`examples/copilot-setup-steps.yml`](examples/copilot-setup-steps.yml) - copy to `.github/workflows/copilot-setup-steps.yml`
+
+### @opencode Mention Handler
+
+Trigger an OpenCode agent by mentioning `@opencode` in any issue or PR comment. The agent receives full context (issue body, comment thread, PR diff) and can investigate, fix, or respond.
+
+See [`examples/opencode-mention.yml`](examples/opencode-mention.yml) - copy to `.github/workflows/opencode-mention.yml`
+
+**Example usage:**
+```
+@opencode investigate why the tests are failing and fix it
+@opencode review this PR and suggest improvements  
+@opencode add error handling to the auth module
+```
+
 ---
 
 ## Architecture

@@ -213,124 +213,13 @@ async function handleInit(args: { verbose: boolean }) {
     "secretName": "OPENCODE_AUTH_BUNDLE", // The secret name (matches action input)
     "sync": {
       "auth": {
-        "antigravity-accounts": true, // Sync Google Antigravity OAuth tokens
-        "auth": true, // Sync session state
+        "presets": ["antigravity", "auth"] // Standard presets
         // "credentials": true // Uncomment if you use API keys in credentials.json
       },
-      "config": {
-        // "mode": "full", // Sync your entire local opencode.jsonc
-        "mode": "merge", // Recommended: Merge specific settings into the default
-        
-        // Override the model for headless execution (e.g. use Flash for speed/cost)
-        "model": "google/antigravity-gemini-3-flash",
-        
-        // Ensure specific plugins are loaded
-        "plugins": [
-          "opencode-antigravity-auth@1.2.8",
-          "@opencode-ai/github" // Required for GitHub issue management
-        ],
-        
-        // Merge provider configs (e.g. API keys for Google)
-        "providers": {
-          "google": true
-        }
-      }
-    }
-  },
-  "targets": {
-    "default": {
-      // REPLACE THIS with your repository name
-      "repo": "owner/repo-name",
+      "agents": true, // Sync .opencode/agent/*.md
+      "skills": true, // Sync .opencode/skill/*/SKILL.md
+      "commands": true, // Sync .opencode/command/*.md
       
-      // Override defaults for this target if needed
-      "sync": {}
-    }
-  }
-}
-`;
-
-    await Bun.write(configPath, configContent);
-    console.log("✅ Created config: .opencode/opencode-sync.jsonc");
-  } else {
-    console.log("ℹ️  Config already exists in .opencode/");
-  }
-
-  if (!existsSync(configPath) && !existsSync(join(opencodeDir, "opencode-sync.json"))) {
-    const configContent = `/**
- * OpenCode Sync Configuration
- * 
- * This file controls what local OpenCode data is synced to GitHub Secrets
- * for use in GitHub Copilot Agents and CI workflows.
- * 
- * Run 'opencode-sync sync' to apply changes.
- */
-{
-  "defaults": {
-    "environment": "copilot", // The GitHub environment to sync secrets to
-    "secretName": "OPENCODE_AUTH_BUNDLE", // The secret name (matches action input)
-    "sync": {
-      "auth": {
-        "antigravity-accounts": true, // Sync Google Antigravity OAuth tokens
-        "auth": true, // Sync session state
-        // "credentials": true // Uncomment if you use API keys in credentials.json
-      },
-      "config": {
-        // "mode": "full", // Sync your entire local opencode.jsonc
-        "mode": "merge", // Recommended: Merge specific settings into the default
-        
-        // Override the model for headless execution (e.g. use Flash for speed/cost)
-        "model": "google/antigravity-gemini-3-flash",
-        
-        // Ensure specific plugins are loaded
-        "plugins": [
-          "opencode-antigravity-auth@1.2.8",
-          "@opencode-ai/github" // Required for GitHub issue management
-        ],
-        
-        // Merge provider configs (e.g. API keys for Google)
-        "providers": {
-          "google": true
-        }
-      }
-    }
-  },
-  "targets": {
-    "default": {
-      // REPLACE THIS with your repository name
-      "repo": "owner/repo-name",
-      
-      // Override defaults for this target if needed
-      "sync": {}
-    }
-  }
-}
-`;
-
-    await Bun.write(configPath, configContent);
-    console.log("✅ Created config: .opencode/opencode-sync.jsonc");
-  } else {
-    console.log("ℹ️  Config already exists in .opencode/");
-  }
-
-  if (!existsSync(configPath) && !existsSync(join(opencodeDir, "opencode-sync.json"))) {
-    const configContent = `/**
- * OpenCode Sync Configuration
- * 
- * This file controls what local OpenCode data is synced to GitHub Secrets
- * for use in GitHub Copilot Agents and CI workflows.
- * 
- * Run 'opencode-sync sync' to apply changes.
- */
-{
-  "defaults": {
-    "environment": "copilot", // The GitHub environment to sync secrets to
-    "secretName": "OPENCODE_AUTH_BUNDLE", // The secret name (matches action input)
-    "sync": {
-      "auth": {
-        "antigravity-accounts": true, // Sync Google Antigravity OAuth tokens
-        "auth": true, // Sync session state
-        // "credentials": true // Uncomment if you use API keys in credentials.json
-      },
       "config": {
         // "mode": "full", // Sync your entire local opencode.jsonc
         "mode": "merge", // Recommended: Merge specific settings into the default
@@ -377,6 +266,15 @@ async function handleInit(args: { verbose: boolean }) {
 name: OpenCode Agent
 on: workflow_dispatch
 
+concurrency:
+  group: \${{ github.workflow }}-\${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 jobs:
   agent:
     runs-on: ubuntu-latest
@@ -387,13 +285,38 @@ jobs:
       - uses: oven-sh/setup-bun@v1
 
       # Install opencode and restore auth in one step
-      - uses: ./  # Uses the action in the repo root (if running inside this repo)
-                  # In real usage: uses: user/opencode-sync@v1
+      - name: Restore OpenCode Identity
+        uses: ./  # Uses the action in the repo root (if running inside this repo)
+                  # In real usage: uses: rothnic/opencode-sync@v1
         with:
           bundle: \${{ secrets.OPENCODE_AUTH_BUNDLE }}
       
+      - name: Inspect Environment (Debug)
+        run: |
+          echo "✅ OpenCode Identity Restored"
+          echo "📂 Config Location: ~/.config/opencode/opencode.jsonc"
+          if [ -f ~/.config/opencode/opencode.jsonc ]; then
+            grep -C 2 "model" ~/.config/opencode/opencode.jsonc || echo "Model not found in config"
+          else
+            echo "❌ Config file missing"
+          fi
+          
+      - name: Check GitHub Auth
+        env:
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+        run: gh auth status
+
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name "OpenCode Agent"
+          git config --global user.email "agent@opencode.ai"
+
       # Now opencode is ready to use!
-      - run: opencode run "Check the code for issues"
+      - name: Run OpenCode Issue Manager
+        timeout-minutes: 30
+        env:
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+        run: opencode run --command "manage-issues"
 `;
     await Bun.write(workflowPath, workflowContent);
     console.log(`✅ Created workflow: .github/workflows/opencode-agent.yml`);
@@ -404,7 +327,7 @@ jobs:
   }
 
   console.log("\nNext steps:");
-  console.log("1. Edit .opencode/opencode-sync.json with your repo details");
+  console.log("1. Edit .opencode/opencode-sync.jsonc with your repo details");
   console.log("2. Run 'opencode-sync sync default' to push your auth");
 }
 

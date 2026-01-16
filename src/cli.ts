@@ -403,7 +403,6 @@ async function handleCheck(args: { verbose: boolean }) {
   }
 }
 
-// --- Main ---
 
 const result = await run(app, {
   programName: "opencode-sync",

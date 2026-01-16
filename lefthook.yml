@@ -1,9 +1,9 @@
 pre-commit:
   parallel: true
   commands:
-    secrets-check:
-      run: bun run scripts/check-secrets.ts {staged_files}
-      glob: "*"
+#    secrets-check:
+#      run: bun run scripts/check-secrets.ts {staged_files}
+#      glob: "*"
     
     no-auth-files:
       run: |

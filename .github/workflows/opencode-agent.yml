@@ -2,6 +2,10 @@
 name: OpenCode Agent
 on: workflow_dispatch
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   issues: write
@@ -34,6 +38,7 @@ jobs:
 
       # Now opencode is ready to use!
       - name: Run OpenCode Issue Manager
+        timeout-minutes: 5
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: opencode run --command "manage-issues" --print-logs
+        run: opencode run --command "manage-issues"

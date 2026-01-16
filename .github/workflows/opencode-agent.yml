@@ -12,10 +12,21 @@ jobs:
       - uses: oven-sh/setup-bun@v1
 
       # Install opencode and restore auth in one step
-      - uses: ./  # Uses the action in the repo root (if running inside this repo)
-                  # In real usage: uses: user/opencode-sync@v1
+      - name: Restore OpenCode Identity
+        uses: ./  # Uses the action in the repo root
         with:
           bundle: ${{ secrets.OPENCODE_AUTH_BUNDLE }}
       
+      - name: Inspect Environment (Debug)
+        run: |
+          echo "✅ OpenCode Identity Restored"
+          echo "📂 Config Location: ~/.config/opencode/opencode.jsonc"
+          if [ -f ~/.config/opencode/opencode.jsonc ]; then
+            grep -C 2 "model" ~/.config/opencode/opencode.jsonc || echo "Model not found in config"
+          else
+            echo "❌ Config file missing"
+          fi
+
       # Now opencode is ready to use!
-      - run: opencode run "Check the code for issues"
+      - name: Run OpenCode Issue Manager
+        run: opencode run --file .opencode/prompts/issue-manager.md "Check for any open issues and attempt to resolve the highest priority one."

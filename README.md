@@ -1,6 +1,6 @@
 # OpenCode Sync
 
-Sync your local OpenCode authentication and configuration to GitHub secrets for use in GitHub Copilot agents and CI workflows.
+Sync your local OpenCode authentication and configuration to GitHub Secrets for use in GitHub Copilot Agents and CI workflows.
 
 This tool is the "missing link" that enables [OpenCode GitHub Integration](https://opencode.ai/docs/github/) to work in headless environments like GitHub Actions or Copilot Agents.
 
@@ -59,7 +59,7 @@ Edit `.opencode/opencode-sync.jsonc`.
     "sync": {
       "auth": { "antigravity-accounts": true, "auth": true },
       // Sync entire directories
-      "opencodeConfigDir": false, 
+      "opencodeConfigDir": false,
       "opencodeDataDir": false,
       
       "config": {
@@ -78,10 +78,9 @@ Edit `.opencode/opencode-sync.jsonc`.
     }
   },
   "targets": {
-    "prod": { "repo": "myuser/my-repo" }
+    "prod": { "repo": "rothnic/my-repo" }
   }
 }
-```
 </details>
 
 ### 3. Sync
@@ -126,9 +125,10 @@ jobs:
       - uses: oven-sh/setup-bun@v1
       
       # Restore auth & install opencode
-      - uses: myuser/opencode-sync@v1
+      - uses: rothnic/opencode-sync@v1
         with:
           bundle: ${{ secrets.OPENCODE_AUTH_BUNDLE }}
+
           
       # Run agent via command
       - run: opencode run --command "manage-issues" "Analyze this PR"
